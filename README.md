@@ -1,75 +1,69 @@
+中文版本在后面。
+
 # STM32_ESC_Telemetry_Test
 
-STM32F103C8T6 Blue Pill bench-demo firmware for single-motor ESC control using DShot output, ELRS/CRSF receiver input, HC-05 debug telemetry, OLED status display, local safety key, and ADC-based bus monitoring.
+Single-motor bench ESC controller firmware for `STM32F103C8T6 (Blue Pill)`.
 
-This project is built on a new STM32CubeMX / HAL project and reuses the stable low-level logic migrated from the previous E1 experiment firmware wherever practical.
-
----
+This project is built on STM32CubeMX/HAL and reuses stable low-level modules from the E1 project, then adds ELRS/CRSF input, arm/disarm logic, failsafe, DShot output, OLED display, HC-05 telemetry, and bench safety protections.
 
 ## English
 
-### Overview
+### 1. Project Status
 
-This firmware is a practical FYP bench controller for a single ESC + motor test setup.
+- Release status: `V1.0` (first usable version)
+- Target use case: FYP bench demo (single ESC + single motor)
+- Control source: ELRS receiver via `CRSF` on `USART2`
+- Motor output: DShot on `PB8 (TIM4_CH3 + DMA)`
 
-Main capabilities:
+### 2. Key Features
 
-- receive ELRS receiver data over `USART2` using `CRSF`
-- use one RC channel as throttle and one switch channel as `ARM / DISARM`
-- apply receiver timeout failsafe
-- output DShot throttle on `PA6`
-- keep HC-05 support on `USART1` for debug and status output
-- show runtime status on a `1.3" I2C OLED`
-- support a local user key for emergency stop latch / release
-- monitor bus current and bus voltage through `ADC1 + DMA`
+- ELRS/CRSF RC input (`420000 baud`, USART2)
+- RC throttle + arm switch control
+- Arm/disarm state machine with safety gates
+- Receiver timeout failsafe
+- DShot motor command output (single channel)
+- OLED runtime status page (`I2C1`, SSD1306 128x64)
+- HC-05 debug/status link (`USART1`, 9600)
+- Local key emergency stop latch / release
+- ADC + DMA bus voltage/current monitoring
+- ESC-side software protections (overcurrent/overvoltage/regen related)
 
-Safety is the top priority:
+### 3. Hardware Mapping
 
-- motor output defaults to zero on boot
-- motor output is zero when receiver data is missing
-- motor output is zero on failsafe
-- motor output is zero when disarmed
-- arming requires low throttle and a valid receiver link
+Board: `STM32F103C8T6 Blue Pill`
 
-### Hardware Target
+- `PA0` -> ADC current input
+- `PA1` -> ADC voltage input
+- `PA2/PA3` -> USART2 (ELRS/CRSF)
+- `PA9/PA10` -> USART1 (HC-05)
+- `PB6/PB7` -> I2C1 (OLED)
+- `PB8` -> ESC DShot output (`TIM4_CH3`)
+- `PB12` -> HC-05 STATE
+- `PB13` -> USER KEY
+- `PC13` -> USER LED
 
-Board:
+### 4. Software Architecture
 
-- `STM32F103C8T6 Blue Pill`
-
-Fixed peripheral assignment:
-
-- `PA0` -> bus current ADC input
-- `PA1` -> bus voltage ADC input
-- `PA6` -> ESC throttle output (`TIM3_CH1`, DShot)
-- `PA9 / PA10` -> HC-05 on `USART1`
-- `PA2 / PA3` -> ELRS receiver on `USART2`
-- `PB6 / PB7` -> OLED on `I2C1`
-- `PB12` -> HC-05 `STATE`
-- `PB13` -> user key
-- `PC13` -> user LED
-
-### Firmware Architecture
-
-The project is split by responsibility:
+Code is organized by responsibility:
 
 - `app/`
-  - top-level application flow and logic
-  - CRSF receiver parsing
-  - arm / disarm / failsafe state handling
-  - throttle mapping and display model generation
+  - high-level state machine and behavior
+  - CRSF parsing and RC data handling
+  - arm/disarm/failsafe logic
+  - motor command mapping and protections
+  - display model
 - `bsp/`
-  - board-support level reusable modules
-  - HC-05, key debounce, ADC monitor
-  - DShot and OLED low-level drivers reused from the E1 project
+  - HC-05 transport and command parsing
+  - key debounce and event
+  - ADC monitor and derived values
+  - DShot low-level driver
+  - OLED low-level driver
 - `Core/`
-  - STM32CubeMX-generated startup and HAL integration files
+  - CubeMX-generated startup and HAL integration
 - `Drivers/`
-  - STM32 HAL and CMSIS vendor code
+  - STM32 HAL + CMSIS
 
-### Current Application States
-
-The high-level states are:
+### 5. Main Runtime States
 
 - `BOOT`
 - `WAIT_RX`
@@ -78,139 +72,176 @@ The high-level states are:
 - `FAILSAFE`
 - `ESTOP`
 
-Arming rules:
+High-level behavior:
 
-- valid CRSF frames must be present
-- throttle must be low
-- arm switch must be ON
-- arm switch must have seen an `OFF -> ON` transition
-- estop latch must be cleared
+- boot -> always output zero throttle
+- no valid RC frames -> `WAIT_RX`
+- valid and stable link -> `READY`
+- arm conditions met -> `ARMED`
+- RC loss timeout after link established -> `FAILSAFE`
+- local emergency stop -> `ESTOP`
 
-Disarm / stop conditions:
+### 6. RC Mapping and Defaults
 
-- arm switch OFF
-- CRSF timeout
-- failsafe condition
-- local E-stop key
-- HC-05 `STOP` command
-
-### RC Mapping Defaults
-
-Configured in `app/inc/app_config.h`:
+Defined in `app/inc/app_config.h`:
 
 - throttle channel: `CH3`
 - arm switch channel: `CH5`
-- low throttle threshold: `1050 us`
-- arm switch ON threshold: `1600 us`
-- max demo DShot command: `600`
+- RC endpoint model: `988us ~ 2012us`
+- low-throttle threshold: `1050us`
+- arm switch thresholds:
+  - OFF <= `1300us`
+  - ON >= `1700us`
 
-### Local UI and Telemetry
+### 7. Motor Output Policy
 
-OLED main page shows:
+Current default policy is bench-friendly:
 
-- receiver status
-- arm status
-- throttle input
-- DShot command
-- bus voltage and current
+- disarmed -> `DShot = 0`
+- armed + low throttle -> `DShot = 0`
+- throttle above low threshold -> mapped output
+- demo max command default: `DShot 1800`
+- output slew limiting enabled (up/down rate limits)
 
-HC-05 debug link supports:
+### 8. Protection Logic (Software-side)
 
-- periodic status output
-- `STATUS` command
-- `STOP` command
+Motor control includes conservative protection checks:
 
-User key behavior:
+- soft current clamp behavior
+- hard overcurrent trip
+- overvoltage trip
+- regen-like negative current trip
+- latch and release conditions
 
-- short press once -> latch `ESTOP`
-- short press again -> clear `ESTOP` only when safe
+Notes:
 
-### Build
+- these protections help reduce risk but do not replace ESC hardware protections
+- bench test should always be performed with proper safety precautions
 
-Example build commands:
+### 9. Receiver Path and Reliability Notes
+
+Current RX implementation:
+
+- USART2 RX DMA in circular mode
+- CRSF byte stream parsed continuously
+- avoids restart windows from stop/restart receive patterns
+
+HC-05 status transmission is asynchronous (non-blocking queue) to avoid long loop stalls at `9600 baud`.
+
+### 10. Telemetry and Debug
+
+HC-05 periodic status line includes fields such as:
+
+- `state`, `rx`, `link`, `arm`, `arm_sw`
+- `tl` (throttle low gate), `seen` (switch-off seen flag)
+- `drop` (arm drop reason)
+- `thr_us`, `arm_us`, `dshot`
+- `prot`, `reason`, `trip`
+- `vf`, `ce`, `se`, `ue` (CRSF diagnostics)
+
+Supported HC-05 commands:
+
+- `STATUS`
+- `STOP`
+
+### 11. Build
 
 ```bash
 cmake --preset Debug
 cmake --build --preset Debug
 ```
 
-Expected output:
+Main output:
 
 - `build/Debug/STM32_ESC_Telemetry_Test.elf`
 
-### Notes
+### 12. Flash / Debug (VS Code)
 
-- This is a bench demo controller, not a full flight controller.
-- The project assumes the ELRS receiver outputs standard `CRSF` serial frames at `420000 baud`.
-- The clock tree is configured back to `72 MHz` to preserve timing margin for DShot and high-speed serial reception.
+Workspace contains `.vscode` tasks and launch configs for ST-Link workflow:
+
+- build + debug launch
+- standalone flash task using STM32 tools
+
+### 13. Quick Bring-up Checklist
+
+1. Verify wiring (especially ESC signal now on `PB8`)
+2. Power up with prop-safe condition
+3. Confirm HC-05 status reports `rx=1`, `link=1`
+4. Confirm arm switch channel reads expected values (`arm_us`)
+5. Arm with low throttle
+6. Increase throttle gradually and observe current/voltage/protection fields
+
+### 14. Limitations
+
+- single motor only
+- no full flight-control stack
+- no closed-loop RPM control
+- parameter tuning currently compile-time via headers
+
+### 15. Version Tag
+
+This first stable bench-usable release is tagged as:
+
+- `V1.0`
 
 ---
 
 ## 中文
 
-### 项目概述
+### 1. 项目状态
 
-这是一个面向毕设台架实验的单电机 ESC 控制固件，运行在 `STM32F103C8T6 Blue Pill` 上。
+- 发布状态：`V1.0`（第一版可用版本）
+- 目标场景：毕业设计台架单电机演示
+- 控制输入：`USART2` 接 ELRS/CRSF
+- 电机输出：`PB8 (TIM4_CH3 + DMA)` 输出 DShot
 
-主要功能包括：
+### 2. 主要功能
 
-- 通过 `USART2` 接收 ELRS 的 `CRSF` 串口数据
-- 使用一个 RC 通道作为油门输入
-- 使用一个开关通道作为 `ARM / DISARM`
-- 在接收机失联时执行 failsafe 停机
-- 在 `PA6` 输出 DShot 油门到 ESC
-- 保留 `USART1` 上的 HC-05 调试与状态输出
-- 在 `1.3 寸 I2C OLED` 上显示运行状态
-- 使用本地按键实现紧急停机锁存 / 解锁
-- 使用 `ADC1 + DMA` 采集母线电流和母线电压
+- ELRS/CRSF 接收（`420000 baud`）
+- 油门通道 + ARM 开关通道控制
+- ARM/DISARM 状态机
+- 接收机超时 failsafe
+- 单路 DShot 电调控制
+- OLED 实时状态显示（`I2C1`）
+- HC-05 串口状态输出与指令
+- 本地按键急停锁存
+- ADC+DMA 母线电压/电流采样
+- 软保护逻辑（过流/过压/回灌相关）
 
-本项目优先保证台架安全：
+### 3. 硬件引脚分配
 
-- 上电默认零油门
-- 没有接收机数据时强制零油门
-- failsafe 时强制零油门
-- 未解锁时强制零油门
-- 只有低油门且链路有效时才允许 ARM
+开发板：`STM32F103C8T6 Blue Pill`
 
-### 硬件目标
+- `PA0`：电流 ADC 输入
+- `PA1`：电压 ADC 输入
+- `PA2/PA3`：USART2（ELRS/CRSF）
+- `PA9/PA10`：USART1（HC-05）
+- `PB6/PB7`：I2C1（OLED）
+- `PB8`：ESC DShot 输出（TIM4_CH3）
+- `PB12`：HC-05 STATE
+- `PB13`：用户按键
+- `PC13`：用户 LED
 
-开发板：
-
-- `STM32F103C8T6 Blue Pill`
-
-固定引脚分配如下：
-
-- `PA0` -> 母线电流 ADC 输入
-- `PA1` -> 母线电压 ADC 输入
-- `PA6` -> ESC 油门输出（`TIM3_CH1`, DShot）
-- `PA9 / PA10` -> HC-05（`USART1`）
-- `PA2 / PA3` -> ELRS 接收机（`USART2`）
-- `PB6 / PB7` -> OLED（`I2C1`）
-- `PB12` -> HC-05 `STATE`
-- `PB13` -> 用户按键
-- `PC13` -> 用户 LED
-
-### 软件结构
-
-工程按职责分层：
+### 4. 软件结构
 
 - `app/`
-  - 顶层应用流程与控制逻辑
-  - CRSF 接收解析
-  - ARM / DISARM / failsafe 状态管理
-  - 油门映射与显示模型整理
+  - 顶层流程与状态机
+  - CRSF 解析
+  - ARM/DISARM/failsafe 逻辑
+  - 油门映射与电机保护
+  - 显示模型
 - `bsp/`
-  - 板级支持模块
-  - HC-05、按键去抖、ADC 监测
-  - 从 E1 项目复用过来的 DShot 与 OLED 底层
+  - HC-05 通信与命令
+  - 按键去抖
+  - ADC 监测
+  - DShot 底层
+  - OLED 底层
 - `Core/`
-  - STM32CubeMX 生成的启动与 HAL 集成代码
+  - CubeMX 生成代码
 - `Drivers/`
-  - STM32 HAL 与 CMSIS 官方代码
+  - STM32 HAL/CMSIS
 
-### 当前应用状态
-
-高层状态包括：
+### 5. 运行状态
 
 - `BOOT`
 - `WAIT_RX`
@@ -219,69 +250,111 @@ Expected output:
 - `FAILSAFE`
 - `ESTOP`
 
-允许 ARM 的条件：
+状态流转简述：
 
-- 必须持续收到有效 CRSF 帧
-- 油门必须处于低位
-- ARM 开关必须为 ON
-- ARM 开关必须经历一次 `OFF -> ON`
-- 本地 `ESTOP` 必须已经解除
+- 上电默认零油门
+- 无有效接收帧 -> `WAIT_RX`
+- 链路稳定 -> `READY`
+- 满足上锁条件 -> `ARMED`
+- 已建立链路后超时失联 -> `FAILSAFE`
+- 本地急停 -> `ESTOP`
 
-触发停机 / 退出 ARM 的条件：
+### 6. 通道映射与默认参数
 
-- ARM 开关 OFF
-- CRSF 超时
-- failsafe
-- 本地急停按键
-- HC-05 的 `STOP` 命令
-
-### 默认 RC 映射
-
-配置位于 `app/inc/app_config.h`：
+配置文件：`app/inc/app_config.h`
 
 - 油门通道：`CH3`
 - ARM 开关通道：`CH5`
-- 低油门阈值：`1050 us`
-- ARM 开关导通阈值：`1600 us`
-- 演示用最大 DShot 命令：`600`
+- 通道端点模型：`988us ~ 2012us`
+- 低油门阈值：`1050us`
+- ARM 开关阈值：
+  - OFF <= `1300us`
+  - ON >= `1700us`
 
-### 本地显示与调试
+### 7. 电机输出策略
 
-OLED 主页面显示：
+当前默认策略（更适合台架）：
 
-- 接收机状态
-- 解锁状态
-- 油门输入
-- DShot 命令
-- 母线电压与电流
+- 未上锁：`DShot=0`
+- 已上锁但油门最低：`DShot=0`
+- 油门超过低阈值后开始输出映射
+- 演示最大输出默认：`DShot 1800`
+- 启用了输出斜率限制（升降速限幅）
 
-HC-05 调试链路支持：
+### 8. 软件保护逻辑
 
-- 周期性状态输出
-- `STATUS` 命令
-- `STOP` 命令
+电机控制里包含保守保护：
 
-用户按键行为：
+- 软限流行为
+- 硬过流跳闸
+- 过压跳闸
+- 回灌类负电流跳闸
+- 锁存与释放条件
 
-- 短按一次 -> 锁存 `ESTOP`
-- 再短按一次 -> 只有在安全条件满足时才解除 `ESTOP`
+说明：
 
-### 编译
+- 这些保护是辅助保护，不能替代 ESC 硬件保护
+- 台架测试请始终保持安全操作
 
-编译示例：
+### 9. 接收链路可靠性说明
+
+当前接收实现：
+
+- USART2 DMA 环形接收
+- 持续解析 CRSF 字节流
+- 避免 stop/restart 接收窗口导致的丢字节
+
+HC-05 状态发送已改为异步非阻塞队列，避免 `9600` 波特率阻塞主循环。
+
+### 10. 调试与状态输出
+
+HC-05 状态行包含：
+
+- `state`, `rx`, `link`, `arm`, `arm_sw`
+- `tl`（低油门门限判定）, `seen`（是否见过开关 OFF）
+- `drop`（退臂原因）
+- `thr_us`, `arm_us`, `dshot`
+- `prot`, `reason`, `trip`
+- `vf`, `ce`, `se`, `ue`（CRSF 诊断）
+
+HC-05 支持命令：
+
+- `STATUS`
+- `STOP`
+
+### 11. 构建
 
 ```bash
 cmake --preset Debug
 cmake --build --preset Debug
 ```
 
-产物示例：
+主要产物：
 
 - `build/Debug/STM32_ESC_Telemetry_Test.elf`
 
-### 说明
+### 12. 下载与调试（VS Code）
 
-- 这是一个台架演示控制器，不是完整飞控。
-- 项目默认 ELRS 接收机通过 `420000 baud` 输出标准 `CRSF` 串口帧。
-- 系统时钟已经恢复为 `72 MHz`，以保证 DShot 与高速串口接收的时序裕量。
+仓库已包含 `.vscode` 配置，可用于 ST-Link 构建/下载/调试流程。
 
+### 13. 快速上电检查
+
+1. 确认 ESC 信号线接在 `PB8`
+2. 上电前保证安全环境（无桨或安全夹具）
+3. 观察 HC-05 是否 `rx=1`, `link=1`
+4. 检查 `arm_us` 是否随开关变化
+5. 低油门执行 ARM
+6. 逐步加油并观察电压/电流/保护状态
+
+### 14. 当前限制
+
+- 仅单电机
+- 非完整飞控
+- 无闭环转速控制
+- 参数主要通过头文件编译期配置
+
+### 15. 版本标签
+
+第一版可用版本标签：
+
+- `V1.0`

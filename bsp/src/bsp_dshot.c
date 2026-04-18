@@ -30,8 +30,8 @@ void Bsp_Dshot_Init(void)
 {
     memset(&g_dshot, 0, sizeof(g_dshot));
 
-    __HAL_TIM_SET_COUNTER(&htim3, 0U);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 0U);
+    __HAL_TIM_SET_COUNTER(&htim4, 0U);
+    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, 0U);
     Bsp_Dshot_TriggerFrame(0U);
 }
 
@@ -68,13 +68,13 @@ void Bsp_Dshot_Task(uint32_t now_ms)
 
 void Bsp_Dshot_HandlePulseFinished(TIM_HandleTypeDef *htim)
 {
-    if ((htim == NULL) || (htim->Instance != TIM3))
+    if ((htim == NULL) || (htim->Instance != TIM4))
     {
         return;
     }
 
-    (void)HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_1);
-    __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_1, 0U);
+    (void)HAL_TIM_PWM_Stop_DMA(htim, TIM_CHANNEL_3);
+    __HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_3, 0U);
     __HAL_TIM_SET_COUNTER(htim, 0U);
     g_dshot.dma_busy = 0U;
 }
@@ -152,12 +152,12 @@ static void Bsp_Dshot_TriggerFrame(uint16_t throttle_value)
     Bsp_Dshot_PrepareFrame(throttle_value);
     g_dshot.dma_busy = 1U;
 
-    __HAL_TIM_DISABLE(&htim3);
-    __HAL_TIM_SET_COUNTER(&htim3, 0U);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, g_dshot.dma_buffer[0]);
+    __HAL_TIM_DISABLE(&htim4);
+    __HAL_TIM_SET_COUNTER(&htim4, 0U);
+    __HAL_TIM_SET_COMPARE(&htim4, TIM_CHANNEL_3, g_dshot.dma_buffer[0]);
 
-    status = HAL_TIM_PWM_Start_DMA(&htim3,
-                                   TIM_CHANNEL_1,
+    status = HAL_TIM_PWM_Start_DMA(&htim4,
+                                   TIM_CHANNEL_3,
                                    (uint32_t *)&g_dshot.dma_buffer[1],
                                    (uint16_t)(DSHOT_DMA_BUFFER_LENGTH - 1U));
     if (status != HAL_OK)

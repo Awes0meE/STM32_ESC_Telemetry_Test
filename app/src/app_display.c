@@ -50,6 +50,11 @@ void App_Display_Task(const AppDisplayModel_t *model, uint32_t now_ms)
     {
         (void)snprintf(line0, sizeof(line0), "ESTOP");
     }
+    else if (model->protect_active != 0U)
+    {
+        (void)snprintf(line0, sizeof(line0), "PROTECT %s",
+                       App_Motor_GetProtectReasonName(model->protect_reason));
+    }
     else if (model->state == APP_STATE_FAILSAFE)
     {
         (void)snprintf(line0, sizeof(line0), "FAILSAFE");
@@ -91,14 +96,17 @@ static void App_Display_FormatFixed2(char *dst, size_t len, float value)
         return;
     }
 
+    scaled = (int32_t)(value * 100.0f + 0.5f);
     if (value < 0.0f)
     {
-        value = 0.0f;
+        scaled = (int32_t)(value * 100.0f - 0.5f);
     }
-
-    scaled = (int32_t)(value * 100.0f + 0.5f);
     integer_part = scaled / 100;
     fractional_part = scaled % 100;
+    if (fractional_part < 0)
+    {
+        fractional_part = -fractional_part;
+    }
 
     (void)snprintf(dst, len, "%ld.%02ld", (long)integer_part, (long)fractional_part);
 }

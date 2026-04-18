@@ -17,6 +17,7 @@ static uint8_t App_RcCrsf_ComputeFrameCrc(const uint8_t *frame, uint8_t frame_si
 static void App_RcCrsf_ProcessFrame(const uint8_t *frame, uint8_t frame_size);
 static void App_RcCrsf_DecodeChannels(const uint8_t *payload, uint8_t payload_size);
 static uint16_t App_RcCrsf_RawToUs(uint16_t raw_value);
+static uint8_t App_RcCrsf_IsValidAddress(uint8_t address);
 
 void App_RcCrsf_Init(void)
 {
@@ -25,8 +26,15 @@ void App_RcCrsf_Init(void)
 
 void App_RcCrsf_HandleRxByte(uint8_t byte)
 {
+    g_crsf.data.diag.rx_byte_count++;
+
     if (g_crsf.frame_index == 0U)
     {
+        if (App_RcCrsf_IsValidAddress(byte) == 0U)
+        {
+            return;
+        }
+
         g_crsf.frame_buffer[g_crsf.frame_index++] = byte;
         return;
     }
@@ -35,7 +43,14 @@ void App_RcCrsf_HandleRxByte(uint8_t byte)
     {
         if ((byte < 2U) || (byte > (uint8_t)(sizeof(g_crsf.frame_buffer) - 2U)))
         {
+            g_crsf.data.diag.size_error_count++;
             g_crsf.frame_index = 0U;
+            g_crsf.expected_size = 0U;
+
+            if (App_RcCrsf_IsValidAddress(byte) != 0U)
+            {
+                g_crsf.frame_buffer[g_crsf.frame_index++] = byte;
+            }
             return;
         }
 
@@ -48,6 +63,7 @@ void App_RcCrsf_HandleRxByte(uint8_t byte)
 
     if (g_crsf.frame_index >= sizeof(g_crsf.frame_buffer))
     {
+        g_crsf.data.diag.size_error_count++;
         g_crsf.frame_index = 0U;
         g_crsf.expected_size = 0U;
         return;
@@ -59,6 +75,12 @@ void App_RcCrsf_HandleRxByte(uint8_t byte)
         g_crsf.frame_index = 0U;
         g_crsf.expected_size = 0U;
     }
+}
+
+void App_RcCrsf_ReportUartError(uint32_t status_reg)
+{
+    g_crsf.data.diag.uart_error_count++;
+    g_crsf.data.diag.last_error_sr = status_reg;
 }
 
 void App_RcCrsf_GetSnapshot(AppRcCrsfData_t *out)
@@ -81,8 +103,15 @@ void App_RcCrsf_GetSnapshot(AppRcCrsfData_t *out)
 
 uint8_t App_RcCrsf_HasFreshFrame(uint32_t now_ms, uint32_t timeout_ms)
 {
-    return (g_crsf.data.frame_ok != 0U) &&
-        ((now_ms - g_crsf.data.last_frame_ms) <= timeout_ms);
+    int32_t dt_ms;
+
+    if (g_crsf.data.frame_ok == 0U)
+    {
+        return 0U;
+    }
+
+    dt_ms = (int32_t)(now_ms - g_crsf.data.last_frame_ms);
+    return (dt_ms <= (int32_t)timeout_ms) ? 1U : 0U;
 }
 
 static uint8_t App_RcCrsf_Crc8DvbS2(uint8_t crc, uint8_t data)
@@ -131,6 +160,7 @@ static void App_RcCrsf_ProcessFrame(const uint8_t *frame, uint8_t frame_size)
 
     if (App_RcCrsf_ComputeFrameCrc(frame, frame_size) != frame[frame_size - 1U])
     {
+        g_crsf.data.diag.crc_error_count++;
         return;
     }
 
@@ -140,6 +170,7 @@ static void App_RcCrsf_ProcessFrame(const uint8_t *frame, uint8_t frame_size)
         App_RcCrsf_DecodeChannels(payload, payload_size);
         g_crsf.data.frame_ok = 1U;
         g_crsf.data.last_frame_ms = HAL_GetTick();
+        g_crsf.data.diag.valid_frame_count++;
         break;
 
     case 0x14U:
@@ -201,19 +232,37 @@ static uint16_t App_RcCrsf_RawToUs(uint16_t raw_value)
 {
     const uint16_t raw_min = 172U;
     const uint16_t raw_max = 1811U;
+    const uint16_t us_min = APP_RC_MIN_ENDPOINT_US;
+    const uint16_t us_max = APP_RC_MAX_ENDPOINT_US;
     uint32_t scaled;
 
     if (raw_value <= raw_min)
     {
-        return 1000U;
+        return us_min;
     }
 
     if (raw_value >= raw_max)
     {
-        return 2000U;
+        return us_max;
     }
 
-    scaled = (uint32_t)(raw_value - raw_min) * 1000U;
+    scaled = (uint32_t)(raw_value - raw_min) * (uint32_t)(us_max - us_min);
     scaled /= (uint32_t)(raw_max - raw_min);
-    return (uint16_t)(1000U + scaled);
+    return (uint16_t)(us_min + scaled);
+}
+
+static uint8_t App_RcCrsf_IsValidAddress(uint8_t address)
+{
+    switch (address)
+    {
+    case 0x00U:
+    case 0xC8U:
+    case 0xEAU:
+    case 0xECU:
+    case 0xEEU:
+        return 1U;
+
+    default:
+        return 0U;
+    }
 }

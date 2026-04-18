@@ -126,10 +126,7 @@ static void Bsp_AdcMon_UpdateCurrentDerived(uint32_t now_ms)
 #endif
 
     instant_current_a = signed_delta_v * APP_CURRENT_SCALE_A_PER_V;
-    if (instant_current_a < 0.0f)
-    {
-        instant_current_a = 0.0f;
-    }
+    g_adc_mon.data.instant_current_a = instant_current_a;
 
     if ((g_adc_mon.last_current_filter_tick == 0U) ||
         ((now_ms - g_adc_mon.last_current_filter_tick) >= APP_CURRENT_FILTER_INTERVAL_MS))
@@ -166,5 +163,13 @@ static void Bsp_AdcMon_UpdateCurrentDerived(uint32_t now_ms)
         g_adc_mon.data.current_a = instant_current_a;
     }
 
+    if (g_adc_mon.data.current_a < 0.0f)
+    {
+        g_adc_mon.data.current_abs_a = -g_adc_mon.data.current_a;
+    }
+    else
+    {
+        g_adc_mon.data.current_abs_a = g_adc_mon.data.current_a;
+    }
     g_adc_mon.data.power_w = g_adc_mon.data.vbat_v * g_adc_mon.data.current_a;
 }

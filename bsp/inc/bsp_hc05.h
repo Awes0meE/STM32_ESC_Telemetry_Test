@@ -9,6 +9,7 @@ extern "C" {
 
 void Bsp_Hc05_Init(void);
 void Bsp_Hc05_HandleRxByte(uint8_t byte);
+void Bsp_Hc05_HandleTxComplete(void);
 void Bsp_Hc05_Write(const char *text);
 uint8_t Bsp_Hc05_IsConnected(void);
 uint8_t Bsp_Hc05_ConsumeStatusRequest(void);

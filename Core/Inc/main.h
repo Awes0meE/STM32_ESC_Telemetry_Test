@@ -63,6 +63,8 @@ void Error_Handler(void);
 #define USER_KEY_GPIO_Port GPIOB
 #define HC05_STATE_Pin GPIO_PIN_12
 #define HC05_STATE_GPIO_Port GPIOB
+#define ESC_DSHOT_Pin GPIO_PIN_8
+#define ESC_DSHOT_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

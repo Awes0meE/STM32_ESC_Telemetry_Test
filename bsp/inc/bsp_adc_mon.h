@@ -15,7 +15,9 @@ typedef struct
     float v_vbat_adc;
     float delta_i_v;
     float active_zero_offset_v;
+    float instant_current_a;
     float current_a;
+    float current_abs_a;
     float vbat_v;
     float power_w;
 } BspAdcMonData_t;

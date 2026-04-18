@@ -12,19 +12,42 @@ extern "C" {
 #define APP_RC_THROTTLE_CH                  3U
 #define APP_RC_ARM_CH                       5U
 
-#define APP_RC_MIN_COMMAND_US               1000U
+#define APP_RC_MIN_ENDPOINT_US              988U
+#define APP_RC_MAX_ENDPOINT_US              2012U
+
+#define APP_RC_MIN_COMMAND_US               APP_RC_MIN_ENDPOINT_US
 #define APP_RC_LOW_THROTTLE_US              1050U
-#define APP_RC_ARM_ON_US                    1600U
-#define APP_RC_MAX_COMMAND_US               1850U
+#define APP_RC_ARM_OFF_US                   1300U
+#define APP_RC_ARM_ON_US                    1700U
+#define APP_RC_MAX_COMMAND_US               APP_RC_MAX_ENDPOINT_US
 
 #define APP_RX_FAILSAFE_TIMEOUT_MS          150U
 #define APP_RX_STABLE_MS                    300U
+#define APP_ARM_REQUIRE_SWITCH_CYCLE        0U
 
 #define APP_DSHOT_SEND_INTERVAL_MS          1U
 #define APP_DSHOT_MIN_THROTTLE              48U
 #define APP_DSHOT_MAX_THROTTLE              2047U
-#define APP_DSHOT_MAX_DEMO                  600U
+#define APP_DSHOT_MAX_DEMO                  2047U
 #define APP_DSHOT_TELEMETRY_BIT             0U
+
+#define APP_MOTOR_SPIN_ARM_DSHOT            160U
+#define APP_MOTOR_SPIN_MIN_DSHOT            220U
+#define APP_MOTOR_IDLE_HOLD_MS              300U
+#define APP_MOTOR_STOP_AT_LOW_THROTTLE      1U
+
+#define APP_MOTOR_RAMP_UP_DSHOT_PER_MS      6U
+#define APP_MOTOR_RAMP_DOWN_DSHOT_PER_MS    18U
+
+#define APP_PROTECT_SOFT_CURRENT_A          10.0f
+#define APP_PROTECT_HARD_CURRENT_A          16.0f
+#define APP_PROTECT_REGEN_CURRENT_A         4.0f
+#define APP_PROTECT_RELEASE_CURRENT_A       2.0f
+
+#define APP_PROTECT_OVERVOLTAGE_V           17.40f
+#define APP_PROTECT_RELEASE_VBAT_V          16.90f
+
+#define APP_PROTECT_LATCH_MS                800U
 
 #define APP_HC05_STATUS_INTERVAL_MS         500U
 #define APP_HC05_UART_TIMEOUT_MS            200U
